@@ -6,6 +6,7 @@ const app = express();
 const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
 const chatId = "6062771979";
 const MONTO_ARS = 500000;
+const UMBRAL_GANANCIA = 1000; // Solo notificar si ganancia > $1000 ARS
 
 const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
@@ -16,7 +17,6 @@ const cryptoList = [
 
 const fiatCurrencies = ["ars", "usd", "usdt"];
 const pairs = [];
-
 cryptoList.forEach((symbol) => {
   fiatCurrencies.forEach((currency) => {
     if (symbol !== currency) pairs.push({ symbol, currency });
@@ -105,7 +105,6 @@ async function sendMessage() {
   let requestCount = 0;
   const maxRequestsPerMinute = 115;
 
-  // Operaciones simples
   for (const { symbol, currency } of pairs) {
     if (requestCount >= maxRequestsPerMinute) break;
     const key = `${symbol}/${currency}`;
@@ -132,7 +131,7 @@ async function sendMessage() {
     const result = coins * bestSell.sellPrice;
     const gain = result - amountIn;
 
-    if (gain <= 0) continue;
+    if (gain < UMBRAL_GANANCIA) continue;
 
     results.push({
       pair: key,
@@ -145,10 +144,9 @@ async function sendMessage() {
       type: "simple",
     });
 
-    await delay(400); // Espaciado para evitar bloqueo (máx 3 req/s)
+    await delay(400);
   }
 
-  // Operaciones triangulares básicas
   for (const from of cryptoList.slice(0, 10)) {
     for (const mid of cryptoList.slice(0, 10)) {
       if (from === mid) continue;
@@ -169,7 +167,7 @@ async function sendMessage() {
           const result = coins1 * bSell;
           const gain = result - MONTO_ARS;
 
-          if (gain <= 0) continue;
+          if (gain < UMBRAL_GANANCIA) continue;
 
           results.push({
             pair: `${from.toUpperCase()} → ${mid.toUpperCase()} → ${to.toUpperCase()}`,
@@ -182,16 +180,13 @@ async function sendMessage() {
             type: "triangular",
           });
 
-          await delay(400); // evitar bloqueo
+          await delay(400);
         } catch {}
       }
     }
   }
 
-  if (!results.length) {
-    await bot.telegram.sendMessage(chatId, "⚠️ No se encontraron oportunidades rentables.");
-    return;
-  }
+  if (!results.length) return;
 
   results.sort((a, b) => b.gain - a.gain);
 
@@ -215,7 +210,7 @@ async function sendMessage() {
   }
 }
 
-setInterval(sendMessage, 60000);
+setInterval(sendMessage, 180000); // Cada 3 minutos
 
 app.get("/", (_, res) => {
   res.send("Bot de arbitraje en funcionamiento.");
