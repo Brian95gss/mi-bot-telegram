@@ -1,0 +1,14 @@
+{
+  "name": "mi-bot-telegram",
+  "version": "1.0.0",
+  "description": "Bot de arbitraje de criptomonedas con Telegram",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "telegraf": "^4.12.2"
+  }
+}
