@@ -14,18 +14,11 @@ const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
   "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
   "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
-  "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
+  "paxg", "cake", "axs", "slp", "mana", "sand", "chz"
 ];
 
-const allFiatCurrencies = [...fiatCurrencies, ...nuevasDivisas];
-const allCryptoList = [...cryptoList, ...nuevasCriptos];
-
-const pairs = [];
-allCryptoList.forEach((symbol) => {
-  allFiatCurrencies.forEach((currency) => {
-    if (symbol !== currency) pairs.push({ symbol, currency });
-  });
-});
+const allFiatCurrencies = [...new Set([...fiatCurrencies, ...nuevasDivisas])];
+const allCryptoList = [...new Set([...cryptoList, ...nuevasCriptos])];
 
 const exchanges = [
   "letsbit", "universalcoins", "binance", "binancep2p", "fiwind", "trubit",
@@ -33,10 +26,12 @@ const exchanges = [
   "decrypto", "buenbit", "saldo", "ripio", "ripiotrade", "belo",
   "cryptomarketpro", "satoshitango", "paxful", "eluter", "lnp2pbot",
   "bybitp2p", "kriptonmarket", "kucoinp2p", "bitgetp2p", "htxp2p",
-  "lemoncashp2p", "eldoradop2p", "coinexp2p", "vesseo", "dolarapp", "bitso",
+  "lemoncashp2p", "eldoradop2p", "coinexp2p", "vesseo", "dolarapp", "bitso"
 ];
 
 const BSC_API_KEY = "BZED56H367KMXFWS7T5S8MJ1FRCNKPIB9Z";
+const MAX_REQUESTS_PER_EXECUTION = 115;
+const BLOQUE_MONEDAS = 10;
 
 async function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -71,7 +66,6 @@ async function getKrakenPrice(symbol) {
   const formatted = symbol.toLowerCase().replace("/", "");
   const pair = pairMap[formatted];
   if (!pair) return null;
-
   try {
     const res = await axios.get(`https://api.kraken.com/0/public/Ticker?pair=${pair}`);
     const key = Object.keys(res.data.result)[0];
@@ -130,59 +124,61 @@ async function getBNBBlockNumber() {
 async function sendMessage() {
   const results = [];
   let requestCount = 0;
-  const maxRequestsPerMinute = 115;
 
-  for (const { symbol, currency } of pairs) {
-    if (requestCount >= maxRequestsPerMinute) break;
-    const key = `${symbol}/${currency}`;
-    const criptoYa = await getBestPrices(symbol, currency);
-    requestCount++;
+  const selectedCryptos = allCryptoList.slice(0, BLOQUE_MONEDAS);
 
-    const kraken = await getKrakenPrice(key);
-    const kucoin = await getKuCoinPrice(key);
-    const bybit = await getBybitPrice(key);
-    const bitget = await getBitgetPrice(key);
+  for (const symbol of selectedCryptos) {
+    for (const currency of allFiatCurrencies) {
+      if (symbol === currency || requestCount >= MAX_REQUESTS_PER_EXECUTION - 5) break;
 
-    const options = [
-      criptoYa?.bestBuy,
-      criptoYa?.bestSell,
-      kraken,
-      kucoin,
-      bybit,
-      bitget,
-    ].filter(Boolean);
+      const key = `${symbol}/${currency}`;
+      const criptoYa = await getBestPrices(symbol, currency);
+      requestCount++;
 
-    if (options.length < 2) continue;
+      const kraken = await getKrakenPrice(key);
+      const kucoin = await getKuCoinPrice(key);
+      const bybit = await getBybitPrice(key);
+      const bitget = await getBitgetPrice(key);
 
-    const bestBuy = options.reduce((a, b) => (a.buyPrice < b.buyPrice ? a : b));
-    const bestSell = options.reduce((a, b) => (a.sellPrice > b.sellPrice ? a : b));
+      const options = [
+        criptoYa?.bestBuy,
+        criptoYa?.bestSell,
+        kraken,
+        kucoin,
+        bybit,
+        bitget,
+      ].filter(Boolean);
 
-    const amountIn = MONTO_ARS;
-    const coins = amountIn / bestBuy.buyPrice;
-    const result = coins * bestSell.sellPrice;
-    const gain = result - amountIn;
+      if (options.length < 2) continue;
 
-    if (gain < UMBRAL_GANANCIA) continue;
+      const bestBuy = options.reduce((a, b) => (a.buyPrice < b.buyPrice ? a : b));
+      const bestSell = options.reduce((a, b) => (a.sellPrice > b.sellPrice ? a : b));
 
-    results.push({
-      pair: key,
-      buy: bestBuy,
-      sell: bestSell,
-      amountIn,
-      coins,
-      result,
-      gain,
-      type: "simple",
-    });
+      const coins = MONTO_ARS / bestBuy.buyPrice;
+      const result = coins * bestSell.sellPrice;
+      const gain = result - MONTO_ARS;
 
-    await delay(400);
+      if (gain < UMBRAL_GANANCIA) continue;
+
+      results.push({
+        pair: key,
+        buy: bestBuy,
+        sell: bestSell,
+        amountIn: MONTO_ARS,
+        coins,
+        result,
+        gain,
+        type: "simple",
+      });
+
+      await delay(400);
+    }
   }
 
-  for (const from of allCryptoList.slice(0, 10)) {
-    for (const mid of allCryptoList.slice(0, 10)) {
-      if (from === mid) continue;
+  for (const from of selectedCryptos) {
+    for (const mid of selectedCryptos) {
+      if (from === mid || requestCount >= MAX_REQUESTS_PER_EXECUTION - 2) break;
       for (const to of allFiatCurrencies) {
-        if (requestCount >= maxRequestsPerMinute - 2) break;
         try {
           const a = await getBestPrices(from, mid);
           requestCount++;
@@ -241,7 +237,7 @@ async function sendMessage() {
   }
 }
 
-setInterval(sendMessage, 180000); // Cada 3 minutos
+setInterval(sendMessage, 180000);
 
 app.get("/", (_, res) => {
   res.send("Bot de arbitraje en funcionamiento.");
