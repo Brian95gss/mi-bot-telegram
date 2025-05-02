@@ -4,18 +4,18 @@ const { Telegraf } = require("telegraf");
 const { nuevasDivisas, nuevasCriptos } = require("./nuevasMonedas");
 
 const app = express();
-const bot = new Telegraf("7617489508:AAEB_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
+const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ"); // ⚠️ TOKEN TEMPORAL
 const chatId = "6062771979";
 const MONTO_ARS = 500000;
 const UMBRAL_GANANCIA = 1000;
 
+const fiatCurrencies = ["ars", "usd", "usdt"];
 const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
   "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
   "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
   "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
 ];
-const fiatCurrencies = ["ars", "usd", "usdt"];
 
 const allFiatCurrencies = [...fiatCurrencies, ...nuevasDivisas];
 const allCryptoList = [...cryptoList, ...nuevasCriptos];
