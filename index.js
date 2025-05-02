@@ -6,7 +6,7 @@ const app = express();
 const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
 const chatId = "6062771979";
 const MONTO_ARS = 500000;
-const UMBRAL_GANANCIA = 1000; // Solo notificar si ganancia > $1000 ARS
+const UMBRAL_GANANCIA = 1000;
 
 const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
@@ -14,7 +14,6 @@ const cryptoList = [
   "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
   "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
 ];
-
 const fiatCurrencies = ["ars", "usd", "usdt"];
 const pairs = [];
 cryptoList.forEach((symbol) => {
@@ -89,6 +88,29 @@ async function getKuCoinPrice(symbol) {
   }
 }
 
+async function getBybitPrice(symbol) {
+  const formatted = symbol.toUpperCase().replace("/", "");
+  try {
+    const res = await axios.get(`https://api.bybit.com/v5/market/tickers?category=spot`);
+    const match = res.data.result.list.find(p => p.symbol === formatted);
+    if (!match) return null;
+    return { exchange: "bybit", buyPrice: parseFloat(match.bid1Price), sellPrice: parseFloat(match.ask1Price) };
+  } catch {
+    return null;
+  }
+}
+
+async function getBitgetPrice(symbol) {
+  const formatted = symbol.toUpperCase().replace("/", "");
+  try {
+    const res = await axios.get(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${formatted}`);
+    const d = res.data.data;
+    return { exchange: "bitget", buyPrice: parseFloat(d.buyOne), sellPrice: parseFloat(d.sellOne) };
+  } catch {
+    return null;
+  }
+}
+
 async function getBNBBlockNumber() {
   try {
     const res = await axios.get(
@@ -113,12 +135,16 @@ async function sendMessage() {
 
     const kraken = await getKrakenPrice(key);
     const kucoin = await getKuCoinPrice(key);
+    const bybit = await getBybitPrice(key);
+    const bitget = await getBitgetPrice(key);
 
     const options = [
       criptoYa?.bestBuy,
       criptoYa?.bestSell,
       kraken,
       kucoin,
+      bybit,
+      bitget,
     ].filter(Boolean);
 
     if (options.length < 2) continue;
@@ -210,7 +236,7 @@ async function sendMessage() {
   }
 }
 
-setInterval(sendMessage, 180000); // Cada 3 minutos
+setInterval(sendMessage, 180000);
 
 app.get("/", (_, res) => {
   res.send("Bot de arbitraje en funcionamiento.");
