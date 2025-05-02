@@ -217,4 +217,36 @@ async function sendMessage() {
   results.sort((a, b) => b.gain - a.gain);
 
   let msg = `📊 Simulación con ${MONTO_ARS} ARS\n\n`;
-  for (const r of results.slice(0, 15)) {  // Cambié 10 a 
+  for (const r of results.slice(0, 10)) {
+    msg += `🔄 Tipo: ${r.type.toUpperCase()}\n`;
+    msg += `💱 Ruta: ${r.pair}\n`;
+    msg += `🔽 Comprar en ${r.buy.exchange} a $${r.buy.buyPrice.toFixed(2)}\n`;
+    msg += `🔼 Vender en ${r.sell.exchange} a $${r.sell.sellPrice.toFixed(2)}\n`;
+    msg += `➡️ Obtenés: $${r.result.toFixed(2)} (Ganancia: $${r.gain.toFixed(2)})\n\n`;
+  }
+
+  const block = await getBNBBlockNumber();
+  if (block) msg += `📦 Último bloque BNB Chain: ${block}`;
+
+  try {
+    await bot.telegram.sendMessage(chatId, msg);
+    console.log("✅ Mensaje enviado con éxito.");
+  } catch (err) {
+    console.error("❌ Error al enviar mensaje:", err.message);
+  }
+}
+
+setInterval(sendMessage, 180000);
+
+app.get("/", (_, res) => {
+  res.send("Bot de arbitraje en funcionamiento.");
+});
+
+app.listen(3000, () => {
+  console.log("Servidor activo en el puerto 3000");
+});
+
+bot.telegram
+  .sendMessage(chatId, "✅ Bot de arbitraje iniciado. Esperando oportunidades...")
+  .then(() => console.log("Mensaje inicial enviado."))
+  .catch((err) => console.error("Error mensaje inicial:", err.message));
