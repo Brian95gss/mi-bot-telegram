@@ -1,9 +1,10 @@
 const express = require("express");
 const axios = require("axios");
 const { Telegraf } = require("telegraf");
+const { nuevasDivisas, nuevasCriptos } = require("./nuevasMonedas");
 
 const app = express();
-const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
+const bot = new Telegraf("7617489508:AAEB_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
 const chatId = "6062771979";
 const MONTO_ARS = 500000;
 const UMBRAL_GANANCIA = 1000;
@@ -15,9 +16,13 @@ const cryptoList = [
   "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
 ];
 const fiatCurrencies = ["ars", "usd", "usdt"];
+
+const allFiatCurrencies = [...fiatCurrencies, ...nuevasDivisas];
+const allCryptoList = [...cryptoList, ...nuevasCriptos];
+
 const pairs = [];
-cryptoList.forEach((symbol) => {
-  fiatCurrencies.forEach((currency) => {
+allCryptoList.forEach((symbol) => {
+  allFiatCurrencies.forEach((currency) => {
     if (symbol !== currency) pairs.push({ symbol, currency });
   });
 });
@@ -173,10 +178,10 @@ async function sendMessage() {
     await delay(400);
   }
 
-  for (const from of cryptoList.slice(0, 10)) {
-    for (const mid of cryptoList.slice(0, 10)) {
+  for (const from of allCryptoList.slice(0, 10)) {
+    for (const mid of allCryptoList.slice(0, 10)) {
       if (from === mid) continue;
-      for (const to of fiatCurrencies) {
+      for (const to of allFiatCurrencies) {
         if (requestCount >= maxRequestsPerMinute - 2) break;
         try {
           const a = await getBestPrices(from, mid);
