@@ -241,7 +241,7 @@ async function sendMessage() {
   }
 }
 
-setInterval(sendMessage, 180000);
+setInterval(sendMessage, 180000); // Cada 3 minutos
 
 app.get("/", (_, res) => {
   res.send("Bot de arbitraje en funcionamiento.");
@@ -254,4 +254,4 @@ app.listen(3000, () => {
 bot.telegram
   .sendMessage(chatId, "✅ Bot de arbitraje iniciado. Esperando oportunidades...")
   .then(() => console.log("Mensaje inicial enviado."))
-  .catch((err) => console.error("Error mensaje inicial:", err.message));
+  .catch((err) => console.error("❌ Error mensaje inicial:", err.message));
