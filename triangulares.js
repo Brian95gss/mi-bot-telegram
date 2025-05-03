@@ -1,26 +1,30 @@
 const axios = require('axios');
 const { Telegraf } = require('telegraf');
-const { nuevasDivisas, nuevasCriptos } = require('./nuevasMonedas');
 
 // Token y chat ID proporcionados
 const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
 const chatId = "6062771979";
 
 const MONTO_ARS = 500000;
-const UMBRAL_GANANCIA = 1000; // Ganancia mínima para mostrar
-const BLOQUE_MONEDAS = 5; // Cantidad de "from" por bloque
+const UMBRAL_GANANCIA = 1000;
+const BLOQUE_MONEDAS = 5;
 const MAX_REQUESTS_PER_EXECUTION = 110;
-const INTERVALO_EJECUCION_MS = 65000; // cada 65 segundos
+const INTERVALO_EJECUCION_MS = 65000;
 let bloqueActual = 0;
 
-// Lista completa
-const allCryptoList = nuevasCriptos;
-const allFiatCurrencies = nuevasDivisas;
+// Criptomonedas
+const allCryptoList = [
+  "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
+  "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
+  "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
+  "paxg", "cake", "axs", "slp", "mana", "sand", "chz"
+];
 
-// Delay entre requests
+// Solo se consideran estos como destinos finales
+const fiatAndStables = ["ars", "usd", "usdt", "usdc", "dai"];
+
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// Obtener mejor precio de compra y venta entre un par
 async function getBestPrices(from, to) {
   try {
     const response = await axios.get(`https://criptoya.com/api/${from}/${to}/1`);
@@ -46,7 +50,6 @@ async function getBestPrices(from, to) {
   }
 }
 
-// Ejecución por bloque
 async function buscarTriangularesPorBloque() {
   const totalBloques = Math.ceil(allCryptoList.length / BLOQUE_MONEDAS);
   const fromCryptos = allCryptoList.slice(bloqueActual * BLOQUE_MONEDAS, (bloqueActual + 1) * BLOQUE_MONEDAS);
@@ -58,7 +61,7 @@ async function buscarTriangularesPorBloque() {
     for (const mid of allCryptoList) {
       if (from === mid || requestCount >= MAX_REQUESTS_PER_EXECUTION - 2) break;
 
-      for (const to of allFiatCurrencies) {
+      for (const to of fiatAndStables) {
         const key1 = `${from}-${mid}`;
         const key2 = `${mid}-${to}`;
 
@@ -111,8 +114,5 @@ async function buscarTriangularesPorBloque() {
   bloqueActual = (bloqueActual + 1) % totalBloques;
 }
 
-// Ejecutar cada 65 segundos
 setInterval(buscarTriangularesPorBloque, INTERVALO_EJECUCION_MS);
-
-// Primera ejecución inmediata
 buscarTriangularesPorBloque();
