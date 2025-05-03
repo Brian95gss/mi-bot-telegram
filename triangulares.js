@@ -1,127 +1,118 @@
-const axios = require("axios");
-const { Telegraf } = require("telegraf");
-const { nuevasDivisas, nuevasCriptos } = require("./nuevasMonedas");
+const axios = require('axios');
+const { Telegraf } = require('telegraf');
+const { nuevasDivisas, nuevasCriptos } = require('./nuevasMonedas');
 
+// Token y chat ID proporcionados
 const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
 const chatId = "6062771979";
 
 const MONTO_ARS = 500000;
-const UMBRAL_GANANCIA = 1000;
-const MAX_REQUESTS_PER_EXECUTION = 115;
-const BLOQUE_MONEDAS = 10;
+const UMBRAL_GANANCIA = 1000; // Ganancia mínima para mostrar
+const BLOQUE_MONEDAS = 5; // Cantidad de "from" por bloque
+const MAX_REQUESTS_PER_EXECUTION = 110;
+const INTERVALO_EJECUCION_MS = 65000; // cada 65 segundos
+let bloqueActual = 0;
 
-const fiatCurrencies = ["ars", "usd", "usdt"];
-const cryptoList = [
-  "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
-  "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
-  "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
-  "paxg", "cake", "axs", "slp", "mana", "sand", "chz"
-];
+// Lista completa
+const allCryptoList = nuevasCriptos;
+const allFiatCurrencies = nuevasDivisas;
 
-const allFiatCurrencies = [...new Set([...fiatCurrencies, ...nuevasDivisas])];
-const allCryptoList = [...new Set([...cryptoList, ...nuevasCriptos])];
+// Delay entre requests
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const exchanges = [
-  "letsbit", "universalcoins", "binance", "binancep2p", "fiwind", "trubit",
-  "pollux", "pluscrypto", "tiendacrypto", "bitsoalpha", "cocoscrypto",
-  "decrypto", "buenbit", "saldo", "ripio", "ripiotrade", "belo",
-  "cryptomarketpro", "satoshitango", "paxful", "eluter", "lnp2pbot",
-  "bybitp2p", "kriptonmarket", "kucoinp2p", "bitgetp2p", "htxp2p",
-  "lemoncashp2p", "eldoradop2p", "coinexp2p", "vesseo", "dolarapp", "bitso"
-];
-
-async function delay(ms) {
-  return new Promise((res) => setTimeout(res, ms));
-}
-
-async function getBestPrices(symbol, currency) {
+// Obtener mejor precio de compra y venta entre un par
+async function getBestPrices(from, to) {
   try {
-    const url = `https://criptoya.com/api/${symbol}/${currency}/0.1`;
-    const { data } = await axios.get(url);
-    const prices = exchanges
-      .map((ex) => {
-        const buy = data[ex]?.totalAsk;
-        const sell = data[ex]?.totalBid;
-        if (buy && sell) return { exchange: ex, buyPrice: buy, sellPrice: sell };
-        return null;
-      })
-      .filter(Boolean);
-    if (!prices.length) return null;
-    const bestBuy = prices.reduce((a, b) => (a.buyPrice < b.buyPrice ? a : b));
-    const bestSell = prices.reduce((a, b) => (a.sellPrice > b.sellPrice ? a : b));
-    return { pair: `${symbol.toUpperCase()}/${currency.toUpperCase()}`, bestBuy, bestSell };
-  } catch {
+    const response = await axios.get(`https://criptoya.com/api/${from}/${to}/1`);
+    const data = response.data;
+    let bestBuy = { buyPrice: Infinity, exchange: null };
+    let bestSell = { sellPrice: 0, exchange: null };
+
+    for (const [exchange, info] of Object.entries(data)) {
+      if (info.compra && info.compra < bestBuy.buyPrice) {
+        bestBuy = { buyPrice: info.compra, exchange };
+      }
+      if (info.venta && info.venta > bestSell.sellPrice) {
+        bestSell = { sellPrice: info.venta, exchange };
+      }
+    }
+
+    if (bestBuy.exchange && bestSell.exchange) {
+      return { bestBuy, bestSell };
+    }
+    return null;
+  } catch (error) {
     return null;
   }
 }
 
-async function buscarTriangulares() {
+// Ejecución por bloque
+async function buscarTriangularesPorBloque() {
+  const totalBloques = Math.ceil(allCryptoList.length / BLOQUE_MONEDAS);
+  const fromCryptos = allCryptoList.slice(bloqueActual * BLOQUE_MONEDAS, (bloqueActual + 1) * BLOQUE_MONEDAS);
   const results = [];
+  const cache = {};
   let requestCount = 0;
-  const selectedCryptos = allCryptoList.slice(0, BLOQUE_MONEDAS);
 
-  for (const from of selectedCryptos) {
-    for (const mid of selectedCryptos) {
+  for (const from of fromCryptos) {
+    for (const mid of allCryptoList) {
       if (from === mid || requestCount >= MAX_REQUESTS_PER_EXECUTION - 2) break;
+
       for (const to of allFiatCurrencies) {
-        try {
-          const a = await getBestPrices(from, mid);
+        const key1 = `${from}-${mid}`;
+        const key2 = `${mid}-${to}`;
+
+        if (!cache[key1]) {
+          cache[key1] = await getBestPrices(from, mid);
           requestCount++;
-          const b = await getBestPrices(mid, to);
+          await delay(400);
+        }
+        if (!cache[key2]) {
+          cache[key2] = await getBestPrices(mid, to);
           requestCount++;
+          await delay(400);
+        }
 
-          if (!a || !b) continue;
+        const a = cache[key1];
+        const b = cache[key2];
+        if (!a || !b) continue;
 
-          const aBuy = a.bestBuy.buyPrice;
-          const bSell = b.bestSell.sellPrice;
+        const coins1 = MONTO_ARS / a.bestBuy.buyPrice;
+        const result = coins1 * b.bestSell.sellPrice;
+        const gain = result - MONTO_ARS;
 
-          const coins1 = MONTO_ARS / aBuy;
-          const result = coins1 * bSell;
-          const gain = result - MONTO_ARS;
-
-          if (gain < UMBRAL_GANANCIA) continue;
-
+        if (gain >= UMBRAL_GANANCIA) {
           results.push({
             pair: `${from.toUpperCase()} → ${mid.toUpperCase()} → ${to.toUpperCase()}`,
             buy: a.bestBuy,
             sell: b.bestSell,
-            amountIn: MONTO_ARS,
-            coins: coins1,
             result,
             gain
           });
-
-          await delay(400);
-        } catch {}
+        }
       }
     }
   }
 
-  if (!results.length) return;
-
-  results.sort((a, b) => b.gain - a.gain);
-
-  let msg = `📊 Triangulares con ${MONTO_ARS} ARS\n\n`;
-  for (const r of results.slice(0, 10)) {
-    msg += `🔄 Tipo: TRIANGULAR\n`;
-    msg += `💱 Ruta: ${r.pair}\n`;
-    msg += `🔽 Comprar en ${r.buy.exchange} a $${r.buy.buyPrice.toFixed(2)}\n`;
-    msg += `🔼 Vender en ${r.sell.exchange} a $${r.sell.sellPrice.toFixed(2)}\n`;
-    msg += `➡️ Obtenés: $${r.result.toFixed(2)} (Ganancia: $${r.gain.toFixed(2)})\n\n`;
-  }
-
-  try {
+  if (results.length) {
+    results.sort((a, b) => b.gain - a.gain);
+    let msg = `📊 Triangulares con ${MONTO_ARS} ARS (bloque ${bloqueActual + 1}/${totalBloques})\n\n`;
+    for (const r of results.slice(0, 10)) {
+      msg += `🔄 Ruta: ${r.pair}\n`;
+      msg += `🔽 Comprar en ${r.buy.exchange} a $${r.buy.buyPrice.toFixed(2)}\n`;
+      msg += `🔼 Vender en ${r.sell.exchange} a $${r.sell.sellPrice.toFixed(2)}\n`;
+      msg += `➡️ Obtenés: $${r.result.toFixed(2)} (Ganancia: $${r.gain.toFixed(2)})\n\n`;
+    }
     await bot.telegram.sendMessage(chatId, msg);
-    console.log("✅ Mensaje triangulares enviado.");
-  } catch (err) {
-    console.error("❌ Error al enviar triangulares:", err.message);
+  } else {
+    console.log(`⏭️ Bloque ${bloqueActual + 1}/${totalBloques} sin resultados.`);
   }
+
+  bloqueActual = (bloqueActual + 1) % totalBloques;
 }
 
-// Ejecutar cada 2 minutos
-setInterval(buscarTriangulares, 120000);
+// Ejecutar cada 65 segundos
+setInterval(buscarTriangularesPorBloque, INTERVALO_EJECUCION_MS);
 
-bot.telegram
-  .sendMessage(chatId, "📈 Triangulares.js iniciado. Analizando rutas triangulares...")
-  .then(() => console.log("✅ Script triangulares activo."))
-  .catch((err) => console.error("❌ Error al iniciar triangulares:", err.message));
+// Primera ejecución inmediata
+buscarTriangularesPorBloque();
