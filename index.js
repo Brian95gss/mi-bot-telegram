@@ -1,30 +1,23 @@
+const express = require("express");
 const axios = require("axios");
 const { Telegraf } = require("telegraf");
 const { nuevasDivisas, nuevasCriptos } = require("./nuevasMonedas");
 
-const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ");
+const app = express();
+const bot = new Telegraf("7617489508:AAEBj_jgwWcd81GAvqHPm6nRYhrF2y0FTbQ"); // ⚠️ TOKEN TEMPORAL
 const chatId = "6062771979";
-
 const MONTO_ARS = 500000;
 const UMBRAL_GANANCIA = 1000;
-const DELAY_MS = 600; // Espera entre requests (600 ms ≈ 100 requests por minuto)
 
-const divisasExcluidas = ["eur", "brl", "clp", "mxn", "cop", "pen", "pyg", "uyu"];
-
+const fiatCurrencies = ["ars", "usd", "usdt"];
 const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
   "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
   "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
-  "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
-  "apt", "arb", "op", "imx", "gmx", "rune", "mina", "one", "icp", "render",
-  "sui", "sei", "kas", "egld", "kava", "hbar", "theta", "zilliqa", "neo",
-  "coti", "enj", "flow", "grt", "snx", "comp", "crv", "cvx", "yfi", "lrc",
-  "sushi", "1inch", "fet", "ocean", "mask", "bnt", "rpl", "ankr", "arweave",
-  "stx", "bal", "flux", "nexo", "qtum", "zil", "zrx"
+  "paxg", "cake", "axs", "slp", "mana", "sand", "chz"
 ];
 
-const fiatCurrenciesBase = ["ars", "usd", "usdt"];
-const allFiatCurrencies = [...new Set([...fiatCurrenciesBase, ...nuevasDivisas])].filter(f => !divisasExcluidas.includes(f));
+const allFiatCurrencies = [...new Set([...fiatCurrencies, ...nuevasDivisas])];
 const allCryptoList = [...new Set([...cryptoList, ...nuevasCriptos])];
 
 const exchanges = [
@@ -36,80 +29,189 @@ const exchanges = [
   "lemoncashp2p", "eldoradop2p", "coinexp2p", "vesseo", "dolarapp", "bitso"
 ];
 
+const BSC_API_KEY = "BZED56H367KMXFWS7T5S8MJ1FRCNKPIB9Z";
+const MAX_REQUESTS_PER_EXECUTION = 115;
+const BLOQUE_MONEDAS = 10;
+
 async function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((res) => setTimeout(res, ms));
 }
 
 async function getBestPrices(symbol, currency) {
   try {
-    const urlCriptoYa = `https://criptoya.com/api/${symbol}/${currency}/0.1`;
-    const { data: criptoYaData } = await axios.get(urlCriptoYa);
-
+    const url = `https://criptoya.com/api/${symbol}/${currency}/0.1`;
+    const { data } = await axios.get(url);
     const prices = exchanges
       .map((ex) => {
-        const buy = criptoYaData[ex]?.totalAsk;
-        const sell = criptoYaData[ex]?.totalBid;
+        const buy = data[ex]?.totalAsk;
+        const sell = data[ex]?.totalBid;
         if (buy && sell) return { exchange: ex, buyPrice: buy, sellPrice: sell };
         return null;
       })
       .filter(Boolean);
-
     if (!prices.length) return null;
-
     const bestBuy = prices.reduce((a, b) => (a.buyPrice < b.buyPrice ? a : b));
     const bestSell = prices.reduce((a, b) => (a.sellPrice > b.sellPrice ? a : b));
-
     return { pair: `${symbol.toUpperCase()}/${currency.toUpperCase()}`, bestBuy, bestSell };
-  } catch (err) {
-    if (err.response && err.response.status === 404) {
-      // Par no disponible, lo ignoramos silenciosamente
-      return null;
-    }
-    console.error("Error al obtener precios:", symbol, currency, err.message);
+  } catch {
     return null;
   }
 }
 
-async function buscarArbitrajes() {
+async function getKrakenPrice(symbol) {
+  const pairMap = {
+    btcusd: "XBTUSD", ethusd: "ETHUSD", usdtusd: "USDTUSD",
+    btcusdt: "XBTUSDT", ethusdt: "ETHUSDT", usdtusdc: "USDTUSDC", usdcusdt: "USDCUSDT"
+  };
+  const formatted = symbol.toLowerCase().replace("/", "");
+  const pair = pairMap[formatted];
+  if (!pair) return null;
+  try {
+    const res = await axios.get(`https://api.kraken.com/0/public/Ticker?pair=${pair}`);
+    const key = Object.keys(res.data.result)[0];
+    const price = parseFloat(res.data.result[key].c[0]);
+    return { exchange: "kraken", buyPrice: price, sellPrice: price };
+  } catch {
+    return null;
+  }
+}
+
+async function getKuCoinPrice(symbol) {
+  const formatted = symbol.toUpperCase().replace("/", "-");
+  try {
+    const res = await axios.get(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${formatted}`);
+    const d = res.data.data;
+    return { exchange: "kucoin", buyPrice: parseFloat(d.bestBid), sellPrice: parseFloat(d.bestAsk) };
+  } catch {
+    return null;
+  }
+}
+
+async function getBybitPrice(symbol) {
+  const formatted = symbol.toUpperCase().replace("/", "");
+  try {
+    const res = await axios.get(`https://api.bybit.com/v5/market/tickers?category=spot`);
+    const match = res.data.result.list.find(p => p.symbol === formatted);
+    if (!match) return null;
+    return { exchange: "bybit", buyPrice: parseFloat(match.bid1Price), sellPrice: parseFloat(match.ask1Price) };
+  } catch {
+    return null;
+  }
+}
+
+async function getBitgetPrice(symbol) {
+  const formatted = symbol.toUpperCase().replace("/", "");
+  try {
+    const res = await axios.get(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${formatted}`);
+    const d = res.data.data;
+    return { exchange: "bitget", buyPrice: parseFloat(d.buyOne), sellPrice: parseFloat(d.sellOne) };
+  } catch {
+    return null;
+  }
+}
+
+async function getBNBBlockNumber() {
+  try {
+    const res = await axios.get(
+      `https://api.bscscan.com/api?module=proxy&action=eth_blockNumber&apikey=${BSC_API_KEY}`
+    );
+    return parseInt(res.data.result, 16);
+  } catch {
+    return null;
+  }
+}
+
+async function sendMessage() {
   const results = [];
+  let requestCount = 0;
 
-  for (const symbol of [...allCryptoList, ...fiatCurrenciesBase]) {
-    for (const currency of [...allCryptoList, ...allFiatCurrencies]) {
-      if (symbol === currency) continue;
+  const selectedCryptos = allCryptoList.slice(0, BLOQUE_MONEDAS);
 
-      const esDivisa1 = allFiatCurrencies.includes(symbol);
-      const esDivisa2 = allFiatCurrencies.includes(currency);
+  for (const symbol of selectedCryptos) {
+    for (const currency of allFiatCurrencies) {
+      if (symbol === currency || requestCount >= MAX_REQUESTS_PER_EXECUTION - 5) break;
 
-      if (esDivisa1 && esDivisa2 && !(
-        (symbol === "usd" && currency === "usdt") || 
-        (symbol === "usdt" && currency === "ars")
-      )) continue;
+      // FILTRO: Al menos uno de los dos debe ser ARS, USD o USDT
+      if (!fiatCurrencies.includes(symbol) && !fiatCurrencies.includes(currency)) continue;
 
-      if (!fiatCurrenciesBase.includes(symbol) && !fiatCurrenciesBase.includes(currency) && (esDivisa1 || esDivisa2)) continue;
+      const key = `${symbol}/${currency}`;
+      const criptoYa = await getBestPrices(symbol, currency);
+      requestCount++;
 
-      try {
-        const res = await getBestPrices(symbol, currency);
-        await delay(DELAY_MS);
+      const kraken = await getKrakenPrice(key);
+      const kucoin = await getKuCoinPrice(key);
+      const bybit = await getBybitPrice(key);
+      const bitget = await getBitgetPrice(key);
 
-        if (!res) continue;
+      const options = [
+        criptoYa?.bestBuy,
+        criptoYa?.bestSell,
+        kraken,
+        kucoin,
+        bybit,
+        bitget,
+      ].filter(Boolean);
 
-        const { bestBuy, bestSell } = res;
-        const coins = MONTO_ARS / bestBuy.buyPrice;
-        const result = coins * bestSell.sellPrice;
-        const gain = result - MONTO_ARS;
+      if (options.length < 2) continue;
 
-        if (gain >= UMBRAL_GANANCIA) {
+      const bestBuy = options.reduce((a, b) => (a.buyPrice < b.buyPrice ? a : b));
+      const bestSell = options.reduce((a, b) => (a.sellPrice > b.sellPrice ? a : b));
+
+      const coins = MONTO_ARS / bestBuy.buyPrice;
+      const result = coins * bestSell.sellPrice;
+      const gain = result - MONTO_ARS;
+
+      if (gain < UMBRAL_GANANCIA) continue;
+
+      results.push({
+        pair: key,
+        buy: bestBuy,
+        sell: bestSell,
+        amountIn: MONTO_ARS,
+        coins,
+        result,
+        gain,
+        type: "simple",
+      });
+
+      await delay(400);
+    }
+  }
+
+  for (const from of selectedCryptos) {
+    for (const mid of selectedCryptos) {
+      if (from === mid || requestCount >= MAX_REQUESTS_PER_EXECUTION - 2) break;
+      for (const to of fiatCurrencies) {
+        try {
+          const a = await getBestPrices(from, mid);
+          requestCount++;
+          const b = await getBestPrices(mid, to);
+          requestCount++;
+
+          if (!a || !b) continue;
+
+          const aBuy = a.bestBuy.buyPrice;
+          const bSell = b.bestSell.sellPrice;
+
+          const coins1 = MONTO_ARS / aBuy;
+          const result = coins1 * bSell;
+          const gain = result - MONTO_ARS;
+
+          if (gain < UMBRAL_GANANCIA) continue;
+
           results.push({
-            pair: res.pair,
-            buy: bestBuy,
-            sell: bestSell,
-            coins,
+            pair: `${from.toUpperCase()} → ${mid.toUpperCase()} → ${to.toUpperCase()}`,
+            buy: a.bestBuy,
+            sell: b.bestSell,
+            amountIn: MONTO_ARS,
+            coins: coins1,
             result,
-            gain
+            gain,
+            type: "triangular",
           });
-        }
-      } catch (err) {
-        console.error("Error en arbitraje:", err.message);
+
+          await delay(400);
+        } catch {}
       }
     }
   }
@@ -118,25 +220,37 @@ async function buscarArbitrajes() {
 
   results.sort((a, b) => b.gain - a.gain);
 
-  let msg = `📊 Simples con ${MONTO_ARS} ARS\n\n`;
+  let msg = `📊 Simulación con ${MONTO_ARS} ARS\n\n`;
   for (const r of results.slice(0, 10)) {
-    msg += `💱 Par: ${r.pair}\n`;
+    msg += `🔄 Tipo: ${r.type.toUpperCase()}\n`;
+    msg += `💱 Ruta: ${r.pair}\n`;
     msg += `🔽 Comprar en ${r.buy.exchange} a $${r.buy.buyPrice.toFixed(2)}\n`;
     msg += `🔼 Vender en ${r.sell.exchange} a $${r.sell.sellPrice.toFixed(2)}\n`;
     msg += `➡️ Obtenés: $${r.result.toFixed(2)} (Ganancia: $${r.gain.toFixed(2)})\n\n`;
   }
 
+  const block = await getBNBBlockNumber();
+  if (block) msg += `📦 Último bloque BNB Chain: ${block}`;
+
   try {
     await bot.telegram.sendMessage(chatId, msg);
-    console.log("✅ Mensaje simples enviado.");
+    console.log("✅ Mensaje enviado con éxito.");
   } catch (err) {
     console.error("❌ Error al enviar mensaje:", err.message);
   }
 }
 
-setInterval(buscarArbitrajes, 180000);
+setInterval(sendMessage, 180000);
+
+app.get("/", (_, res) => {
+  res.send("Bot de arbitraje en funcionamiento.");
+});
+
+app.listen(3000, () => {
+  console.log("Servidor activo en el puerto 3000");
+});
 
 bot.telegram
-  .sendMessage(chatId, "📉 index.js iniciado. Analizando operaciones simples...")
-  .then(() => console.log("✅ Script index.js activo."))
-  .catch((err) => console.error("❌ Error al iniciar:", err.message));
+  .sendMessage(chatId, "✅ Bot de arbitraje iniciado. Esperando oportunidades...")
+  .then(() => console.log("Mensaje inicial enviado."))
+  .catch((err) => console.error("❌ Error mensaje inicial:", err.message));
