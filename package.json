@@ -1,11 +1,10 @@
 {
-  "name": "bot-arbitraje",
+  "name": "bot-arbitraje-simples",
   "version": "1.0.0",
-  "description": "Bot de arbitraje cripto con operaciones simples y triangulares",
+  "description": "Bot de arbitraje cripto con operaciones simples",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "triangulares": "node triangulares.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
