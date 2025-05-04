@@ -8,15 +8,29 @@ const chatId = "6062771979";
 const MONTO_ARS = 500000;
 const UMBRAL_GANANCIA = 1000;
 
+// Nuevas criptos a agregar
+const nuevas = [
+  "apt", "arb", "op", "imx", "gmx", "rune", "mina", "one", "icp", "render",
+  "sui", "sei", "kas", "egld", "kava", "hbar", "theta", "zilliqa", "neo",
+  "coti", "enj", "flow", "grt", "snx", "comp", "crv", "cvx", "yfi", "lrc",
+  "sushi", "1inch", "fet", "ocean", "mask", "bnt", "rpl", "ankr", "arweave",
+  "stx", "bal", "flux", "nexo", "qtum", "zil", "zrx"
+];
+
+// Divisas a excluir
+const divisasExcluidas = ["eur", "brl", "clp", "mxn", "cop", "pen", "pyg", "uyu"];
+
 const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
   "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
   "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
-  "paxg", "cake", "axs", "slp", "mana", "sand", "chz"
+  "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
+  ...nuevas
 ];
 
-const fiatCurrencies = ["ars", "usd", "usdt"];
-const allFiatCurrencies = [...new Set([...fiatCurrencies, ...nuevasDivisas])];
+const fiatCurrenciesBase = ["ars", "usd", "usdt"];
+const allFiatCurrencies = [...new Set([...fiatCurrenciesBase, ...nuevasDivisas])]
+  .filter(fiat => !divisasExcluidas.includes(fiat));
 const allCryptoList = [...new Set([...cryptoList, ...nuevasCriptos])];
 
 const exchanges = [
@@ -52,9 +66,22 @@ async function getBestPrices(symbol, currency) {
 async function buscarArbitrajes() {
   const results = [];
 
-  for (const symbol of allCryptoList) {
-    for (const currency of allFiatCurrencies) {
+  for (const symbol of [...allCryptoList, ...fiatCurrenciesBase]) {
+    for (const currency of [...allCryptoList, ...allFiatCurrencies]) {
       if (symbol === currency) continue;
+
+      // Reglas:
+      const esDivisa1 = allFiatCurrencies.includes(symbol);
+      const esDivisa2 = allFiatCurrencies.includes(currency);
+
+      // Excluir pares solo entre divisas
+      if (esDivisa1 && esDivisa2 && !(
+        (symbol === "usd" && currency === "usdt") || 
+        (symbol === "usdt" && currency === "ars")
+      )) continue;
+
+      // Incluir pares cripto/cripto y cripto/fiat donde fiat sea ars/usd/usdt
+      if (!fiatCurrenciesBase.includes(symbol) && !fiatCurrenciesBase.includes(currency) && (esDivisa1 || esDivisa2)) continue;
 
       try {
         const res = await getBestPrices(symbol, currency);
@@ -107,4 +134,4 @@ setInterval(buscarArbitrajes, 180000);
 bot.telegram
   .sendMessage(chatId, "📉 index.js iniciado. Analizando operaciones simples...")
   .then(() => console.log("✅ Script index.js activo."))
-  .catch((err) => console.error("❌ Error al iniciar index.js:", err.message));
+  .catch((err) => console.error("❌ Error al iniciar index.js:", err));
