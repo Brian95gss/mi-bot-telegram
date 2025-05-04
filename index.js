@@ -9,10 +9,8 @@ const MONTO_ARS = 500000;
 const UMBRAL_GANANCIA = 1000;
 const DELAY_MS = 600; // Espera entre requests (600 ms ≈ 100 requests por minuto)
 
-// Divisas a excluir
 const divisasExcluidas = ["eur", "brl", "clp", "mxn", "cop", "pen", "pyg", "uyu"];
 
-// Lista completa de criptomonedas
 const cryptoList = [
   "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
   "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
@@ -63,6 +61,10 @@ async function getBestPrices(symbol, currency) {
 
     return { pair: `${symbol.toUpperCase()}/${currency.toUpperCase()}`, bestBuy, bestSell };
   } catch (err) {
+    if (err.response && err.response.status === 404) {
+      // Par no disponible, lo ignoramos silenciosamente
+      return null;
+    }
     console.error("Error al obtener precios:", symbol, currency, err.message);
     return null;
   }
@@ -87,7 +89,7 @@ async function buscarArbitrajes() {
 
       try {
         const res = await getBestPrices(symbol, currency);
-        await delay(DELAY_MS); // Espera entre requests
+        await delay(DELAY_MS);
 
         if (!res) continue;
 
@@ -137,4 +139,4 @@ setInterval(buscarArbitrajes, 180000);
 bot.telegram
   .sendMessage(chatId, "📉 index.js iniciado. Analizando operaciones simples...")
   .then(() => console.log("✅ Script index.js activo."))
-  .catch((err) => console.error("❌ Error al iniciar bot:", err.message));
+  .catch((err) => console.error("❌ Error al iniciar:", err.message));
