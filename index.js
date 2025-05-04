@@ -7,9 +7,17 @@ const chatId = "6062771979";
 
 const MONTO_ARS = 500000;
 const UMBRAL_GANANCIA = 1000;
+const DELAY_MS = 600; // Espera entre requests (600 ms ≈ 100 requests por minuto)
 
-// Nuevas criptos a agregar
-const nuevas = [
+// Divisas a excluir
+const divisasExcluidas = ["eur", "brl", "clp", "mxn", "cop", "pen", "pyg", "uyu"];
+
+// Lista completa de criptomonedas
+const cryptoList = [
+  "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
+  "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
+  "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
+  "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
   "apt", "arb", "op", "imx", "gmx", "rune", "mina", "one", "icp", "render",
   "sui", "sei", "kas", "egld", "kava", "hbar", "theta", "zilliqa", "neo",
   "coti", "enj", "flow", "grt", "snx", "comp", "crv", "cvx", "yfi", "lrc",
@@ -17,20 +25,8 @@ const nuevas = [
   "stx", "bal", "flux", "nexo", "qtum", "zil", "zrx"
 ];
 
-// Divisas a excluir
-const divisasExcluidas = ["eur", "brl", "clp", "mxn", "cop", "pen", "pyg", "uyu"];
-
-const cryptoList = [
-  "btc", "eth", "usdt", "usdc", "dai", "criptodolar", "pax", "nuars", "sol",
-  "bnb", "wld", "xrp", "ada", "avax", "doge", "trx", "link", "matic", "dot",
-  "shib", "ltc", "bch", "eos", "xlm", "ftm", "aave", "uni", "algo", "bat",
-  "paxg", "cake", "axs", "slp", "mana", "sand", "chz",
-  ...nuevas
-];
-
 const fiatCurrenciesBase = ["ars", "usd", "usdt"];
-const allFiatCurrencies = [...new Set([...fiatCurrenciesBase, ...nuevasDivisas])]
-  .filter(fiat => !divisasExcluidas.includes(fiat));
+const allFiatCurrencies = [...new Set([...fiatCurrenciesBase, ...nuevasDivisas])].filter(f => !divisasExcluidas.includes(f));
 const allCryptoList = [...new Set([...cryptoList, ...nuevasCriptos])];
 
 const exchanges = [
@@ -42,29 +38,15 @@ const exchanges = [
   "lemoncashp2p", "eldoradop2p", "coinexp2p", "vesseo", "dolarapp", "bitso"
 ];
 
+async function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getBestPrices(symbol, currency) {
   try {
-    // CriptoYa API
     const urlCriptoYa = `https://criptoya.com/api/${symbol}/${currency}/0.1`;
     const { data: criptoYaData } = await axios.get(urlCriptoYa);
 
-    // Binance API
-    const urlBinance = `https://api.binance.com/api/v3/ticker/bookTicker?symbol=${symbol.toUpperCase()}${currency.toUpperCase()}`;
-    const { data: binanceData } = await axios.get(urlBinance);
-
-    // KuCoin API
-    const urlKuCoin = `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${symbol.toUpperCase()}-${currency.toUpperCase()}`;
-    const { data: kuCoinData } = await axios.get(urlKuCoin);
-
-    // Kraken API
-    const urlKraken = `https://api.kraken.com/0/public/Ticker?pair=${symbol.toUpperCase()}${currency.toUpperCase()}`;
-    const { data: krakenData } = await axios.get(urlKraken);
-
-    // BscScan API (BNB)
-    const urlBscScan = `https://api.bscscan.com/api?module=stats&action=bnbprice`;
-    const { data: bscScanData } = await axios.get(urlBscScan);
-
-    // Comparar precios
     const prices = exchanges
       .map((ex) => {
         const buy = criptoYaData[ex]?.totalAsk;
@@ -81,7 +63,7 @@ async function getBestPrices(symbol, currency) {
 
     return { pair: `${symbol.toUpperCase()}/${currency.toUpperCase()}`, bestBuy, bestSell };
   } catch (err) {
-    console.error("Error al obtener los precios:", err);
+    console.error("Error al obtener precios:", symbol, currency, err.message);
     return null;
   }
 }
@@ -96,17 +78,17 @@ async function buscarArbitrajes() {
       const esDivisa1 = allFiatCurrencies.includes(symbol);
       const esDivisa2 = allFiatCurrencies.includes(currency);
 
-      // Excluir pares solo entre divisas
       if (esDivisa1 && esDivisa2 && !(
         (symbol === "usd" && currency === "usdt") || 
         (symbol === "usdt" && currency === "ars")
       )) continue;
 
-      // Incluir pares cripto/cripto y cripto/fiat donde fiat sea ars/usd/usdt
       if (!fiatCurrenciesBase.includes(symbol) && !fiatCurrenciesBase.includes(currency) && (esDivisa1 || esDivisa2)) continue;
 
       try {
         const res = await getBestPrices(symbol, currency);
+        await delay(DELAY_MS); // Espera entre requests
+
         if (!res) continue;
 
         const { bestBuy, bestSell } = res;
@@ -124,10 +106,8 @@ async function buscarArbitrajes() {
             gain
           });
         }
-
-        await new Promise((res) => setTimeout(res, 400));
       } catch (err) {
-        console.error("Error al buscar arbitraje:", err);
+        console.error("Error en arbitraje:", err.message);
       }
     }
   }
@@ -148,14 +128,13 @@ async function buscarArbitrajes() {
     await bot.telegram.sendMessage(chatId, msg);
     console.log("✅ Mensaje simples enviado.");
   } catch (err) {
-    console.error("❌ Error al enviar simples:", err.message);
+    console.error("❌ Error al enviar mensaje:", err.message);
   }
 }
 
-// Ejecutar cada 3 minutos
 setInterval(buscarArbitrajes, 180000);
 
 bot.telegram
   .sendMessage(chatId, "📉 index.js iniciado. Analizando operaciones simples...")
   .then(() => console.log("✅ Script index.js activo."))
-  .catch((err) => console.error("❌ Error al iniciar el bot:", err.message));
+  .catch((err) => console.error("❌ Error al iniciar bot:", err.message));
