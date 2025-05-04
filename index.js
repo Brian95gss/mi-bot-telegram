@@ -44,21 +44,44 @@ const exchanges = [
 
 async function getBestPrices(symbol, currency) {
   try {
-    const url = `https://criptoya.com/api/${symbol}/${currency}/0.1`;
-    const { data } = await axios.get(url);
+    // CriptoYa API
+    const urlCriptoYa = `https://criptoya.com/api/${symbol}/${currency}/0.1`;
+    const { data: criptoYaData } = await axios.get(urlCriptoYa);
+
+    // Binance API
+    const urlBinance = `https://api.binance.com/api/v3/ticker/bookTicker?symbol=${symbol.toUpperCase()}${currency.toUpperCase()}`;
+    const { data: binanceData } = await axios.get(urlBinance);
+
+    // KuCoin API
+    const urlKuCoin = `https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${symbol.toUpperCase()}-${currency.toUpperCase()}`;
+    const { data: kuCoinData } = await axios.get(urlKuCoin);
+
+    // Kraken API
+    const urlKraken = `https://api.kraken.com/0/public/Ticker?pair=${symbol.toUpperCase()}${currency.toUpperCase()}`;
+    const { data: krakenData } = await axios.get(urlKraken);
+
+    // BscScan API (BNB)
+    const urlBscScan = `https://api.bscscan.com/api?module=stats&action=bnbprice`;
+    const { data: bscScanData } = await axios.get(urlBscScan);
+
+    // Comparar precios
     const prices = exchanges
       .map((ex) => {
-        const buy = data[ex]?.totalAsk;
-        const sell = data[ex]?.totalBid;
+        const buy = criptoYaData[ex]?.totalAsk;
+        const sell = criptoYaData[ex]?.totalBid;
         if (buy && sell) return { exchange: ex, buyPrice: buy, sellPrice: sell };
         return null;
       })
       .filter(Boolean);
+
     if (!prices.length) return null;
+
     const bestBuy = prices.reduce((a, b) => (a.buyPrice < b.buyPrice ? a : b));
     const bestSell = prices.reduce((a, b) => (a.sellPrice > b.sellPrice ? a : b));
+
     return { pair: `${symbol.toUpperCase()}/${currency.toUpperCase()}`, bestBuy, bestSell };
-  } catch {
+  } catch (err) {
+    console.error("Error al obtener los precios:", err);
     return null;
   }
 }
@@ -70,7 +93,6 @@ async function buscarArbitrajes() {
     for (const currency of [...allCryptoList, ...allFiatCurrencies]) {
       if (symbol === currency) continue;
 
-      // Reglas:
       const esDivisa1 = allFiatCurrencies.includes(symbol);
       const esDivisa2 = allFiatCurrencies.includes(currency);
 
@@ -104,7 +126,9 @@ async function buscarArbitrajes() {
         }
 
         await new Promise((res) => setTimeout(res, 400));
-      } catch {}
+      } catch (err) {
+        console.error("Error al buscar arbitraje:", err);
+      }
     }
   }
 
@@ -134,4 +158,4 @@ setInterval(buscarArbitrajes, 180000);
 bot.telegram
   .sendMessage(chatId, "📉 index.js iniciado. Analizando operaciones simples...")
   .then(() => console.log("✅ Script index.js activo."))
-  .catch((err) => console.error("❌ Error al iniciar index.js:", err));
+  .catch((err) => console.error("❌ Error al iniciar el bot:", err.message));
